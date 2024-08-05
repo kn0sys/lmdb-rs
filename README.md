@@ -1,12 +1,9 @@
 lmdb-rs
 =======
 
-[![Build status (master)](https://travis-ci.org/vhbit/lmdb-rs.svg?branch=master)](https://travis-ci.org/vhbit/lmdb-rs)
-[![Latest version](http://meritbadge.herokuapp.com/lmdb-rs)](https://crates.io/crates/lmdb-rs)
+[![build](https://github.com/kn0sys/lmdb-rs/actions/workflows/rust.yml/badge.svg)](https://github.com/kn0sys/lmdb-rs/actions/workflows/rust.yml)
 
 Rust bindings for [LMDB](http://symas.com/mdb/)
-
-[Documentation (master branch)](http://vhbit.github.io/lmdb-rs/lmdb_rs/)
 
 Building
 ========
