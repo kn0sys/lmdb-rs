@@ -41,7 +41,6 @@
 
 #![allow(non_upper_case_globals)]
 
-use libc::intmax_t;
 use libc::{c_int, c_uint, size_t, c_void};
 use std;
 use std::borrow::ToOwned;
@@ -514,7 +513,7 @@ impl<'a> Database<'a> {
     /// before longer keys.
     ///
     /// Setting lasts for the lifetime of the underlying db handle.
-    pub fn set_compare(&self, cmp_fn: extern "C" fn(*const MDB_val, *const MDB_val) -> intmax_t) -> MdbResult<()> {
+    pub fn set_compare(&self, cmp_fn: extern "C" fn(*const MDB_val, *const MDB_val) -> c_int) -> MdbResult<()> {
         lift_mdb!(unsafe {
             ffi::mdb_set_compare(self.txn.handle, self.handle, cmp_fn)
         })
@@ -532,7 +531,7 @@ impl<'a> Database<'a> {
     ///
     /// Only used when DbAllowDups is true.
     /// Setting lasts for the lifetime of the underlying db handle.
-    pub fn set_dupsort(&self, cmp_fn: extern "C" fn(*const MDB_val, *const MDB_val) -> intmax_t) -> MdbResult<()> {
+    pub fn set_dupsort(&self, cmp_fn: extern "C" fn(*const MDB_val, *const MDB_val) -> c_int) -> MdbResult<()> {
         lift_mdb!(unsafe {
             ffi::mdb_set_dupsort(self.txn.handle, self.handle, cmp_fn)
         })
@@ -1862,9 +1861,40 @@ impl<'a> MdbValue<'a> {
 
     /// # Safety
     ///  
-    /// caller is responsible for safety
+    /// caller is responsible for safety.
+    /// 
+    /// See github issue: https://github.com/kn0sys/valentinus/issues/11
+    /// 
+    /// # Example
+    /// 
+    /// the following code will lead to UB
+    /// 
+    /// ```rust
+    /// use kn0sys_lmdb_rs::FromMdbValue;
+    /// use kn0sys_lmdb_rs::MdbValue;
+    /// 
+    /// unsafe {
+    ///     let a: i32 = 3;
+    ///     let mdbval = MdbValue::new_from_sized(&a);
+    ///     // let res = i64::from_mdb_value(&mdbval);
+    ///     // println!("{:?}", res);
+    /// }
+    /// ```
+    /// 
+    /// Use the correct types instead: 
+    /// ```rust
+    /// use kn0sys_lmdb_rs::FromMdbValue;
+    /// use kn0sys_lmdb_rs::MdbValue;
+    /// 
+    /// unsafe {
+    ///     let a: i64 = 3;
+    ///     let mdbval = MdbValue::new_from_sized(&a);
+    ///     let res = i64::from_mdb_value(&mdbval);
+    ///     println!("{:?}", res);
+    /// }
+    /// ```
     #[inline]
-    pub fn new_from_sized<T>(data: &'a T) -> MdbValue<'a> {
+    pub unsafe fn new_from_sized<T>(data: &'a T) -> MdbValue<'a> {
         unsafe {
             MdbValue::new(data as *const T as *const libc::c_void, mem::size_of::<T>())
         }
