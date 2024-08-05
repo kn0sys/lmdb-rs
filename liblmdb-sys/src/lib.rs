@@ -3,7 +3,7 @@
 extern crate libc;
 
 pub use self::os::{mdb_mode_t, mdb_filehandle_t};
-use libc::{c_int, c_uint, c_void, c_char, size_t};
+use libc::{c_char, c_int, c_uint, c_void, intmax_t, size_t};
 
 #[cfg(any(target_os = "macos", target_os = "ios", target_os = "linux",
           target_os = "freebsd", target_os = "dragonfly",
@@ -30,7 +30,7 @@ pub type MDB_dbi = c_uint;
 
 pub type MDB_rel_func = extern fn(*const MDB_val, *const c_void, *const c_void, *const c_void);
 pub type MDB_msg_func = extern fn(*const c_char, *const c_void) -> c_int;
-pub type MDB_cmp_func = extern fn(*const MDB_val, *const MDB_val) -> c_int;
+pub type MDB_cmp_func = extern fn(*const MDB_val, *const MDB_val) -> intmax_t;
 
 #[derive(Copy, Clone)]
 #[repr(C)]

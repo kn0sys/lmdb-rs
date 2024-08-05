@@ -1,3 +1,4 @@
+#![allow(clippy::new_ret_no_self)]
 //! High level wrapper of LMDB APIs
 //!
 //! Requires knowledge of LMDB terminology
@@ -40,6 +41,7 @@
 
 #![allow(non_upper_case_globals)]
 
+use libc::intmax_t;
 use libc::{c_int, c_uint, size_t, c_void};
 use std;
 use std::borrow::ToOwned;
@@ -51,6 +53,7 @@ use std::ffi::CString;
 use std::path::Path;
 use std::mem;
 use std::ptr;
+use std::rc::Rc;
 use std::result::Result;
 use std::sync::{Arc, Mutex};
 
@@ -90,7 +93,7 @@ macro_rules! assert_state_eq {
             let c = $cur;
             let e = $exp;
             if c == e {
-                ()
+                // nothing
             } else {
                 let msg = format!("{} requires {:?}, is in {:?}", stringify!($log), c, e);
                 return Err(StateError(msg))
@@ -135,8 +138,8 @@ impl std::fmt::Display for MdbError {
         match self {
             &NotFound | &KeyExists | &TxnFull |
             &CursorFull | &PageFull | &Corrupted |
-            &Panic | &InvalidPath | &CacheError => write!(fmt, "{}", self.to_string()),
-            &StateError(ref msg) => write!(fmt, "{}", msg),
+            &Panic | &InvalidPath | &CacheError => write!(fmt, "{:?}", self),
+            StateError(msg) => write!(fmt, "{}", msg),
             &Other(code, ref msg) => write!(fmt, "{}: {}", code, msg)
         }
     }
@@ -144,18 +147,18 @@ impl std::fmt::Display for MdbError {
 
 impl Error for MdbError {
     fn description(&self) -> &'static str {
-        match self {
-            &NotFound => "not found",
-            &KeyExists => "key exists",
-            &TxnFull => "txn full",
-            &CursorFull => "cursor full",
-            &PageFull => "page full",
-            &Corrupted => "corrupted",
-            &Panic => "panic",
-            &InvalidPath => "invalid path for database",
-            &StateError(_) => "state error",
-            &CacheError => "db cache error",
-            &Other(_, _) => "other error",
+        match *self {
+            NotFound => "not found",
+            KeyExists => "key exists",
+            TxnFull => "txn full",
+            CursorFull => "cursor full",
+            PageFull => "page full",
+            Corrupted => "corrupted",
+            Panic => "panic",
+            InvalidPath => "invalid path for database",
+            StateError(_) => "state error",
+            CacheError => "db cache error",
+            Other(_, _) => "other error",
         }
     }
 }
@@ -385,7 +388,7 @@ pub struct Database<'a> {
 
 impl<'a> Database<'a> {
     fn new_with_handle(handle: ffi::MDB_dbi, txn: &'a NativeTransaction<'a>) -> Database<'a> {
-        Database { handle: handle, txn: txn }
+        Database { handle, txn }
     }
 
     /// Retrieves current db's statistics.
@@ -450,7 +453,7 @@ impl<'a> Database<'a> {
     /// Returns an iterator for all values in database
     pub fn iter(&'a self) -> MdbResult<CursorIterator<'a, CursorIter>> {
         self.txn.new_cursor(self.handle)
-            .and_then(|c| Ok(CursorIterator::wrap(c, CursorIter)))
+            .map(|c| CursorIterator::wrap(c, CursorIter))
     }
 
     /// Returns an iterator through keys starting with start_key (>=), start_key is included
@@ -511,7 +514,7 @@ impl<'a> Database<'a> {
     /// before longer keys.
     ///
     /// Setting lasts for the lifetime of the underlying db handle.
-    pub fn set_compare(&self, cmp_fn: extern "C" fn(*const MDB_val, *const MDB_val) -> c_int) -> MdbResult<()> {
+    pub fn set_compare(&self, cmp_fn: extern "C" fn(*const MDB_val, *const MDB_val) -> intmax_t) -> MdbResult<()> {
         lift_mdb!(unsafe {
             ffi::mdb_set_compare(self.txn.handle, self.handle, cmp_fn)
         })
@@ -529,7 +532,7 @@ impl<'a> Database<'a> {
     ///
     /// Only used when DbAllowDups is true.
     /// Setting lasts for the lifetime of the underlying db handle.
-    pub fn set_dupsort(&self, cmp_fn: extern "C" fn(*const MDB_val, *const MDB_val) -> c_int) -> MdbResult<()> {
+    pub fn set_dupsort(&self, cmp_fn: extern "C" fn(*const MDB_val, *const MDB_val) -> intmax_t) -> MdbResult<()> {
         lift_mdb!(unsafe {
             ffi::mdb_set_dupsort(self.txn.handle, self.handle, cmp_fn)
         })
@@ -548,6 +551,12 @@ pub struct EnvBuilder {
     max_dbs: Option<usize>,
     map_size: Option<u64>,
     autocreate_dir: bool,
+}
+
+impl Default for EnvBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl EnvBuilder {
@@ -603,8 +612,8 @@ impl EnvBuilder {
 
         let env: *mut ffi::MDB_env = ptr::null_mut();
         unsafe {
-            let p_env: *mut *mut ffi::MDB_env = std::mem::transmute(&env);
-            let _ = try_mdb!(ffi::mdb_env_create(p_env));
+            let p_env: *mut *mut ffi::MDB_env = &env as *const *mut ffi::MDB_env as *mut *mut ffi::MDB_env;
+            try_mdb!(ffi::mdb_env_create(p_env));
         }
 
         // Enable only flags which can be changed, otherwise it'll fail
@@ -623,7 +632,7 @@ impl EnvBuilder {
         }
 
         if self.autocreate_dir {
-            let _ = EnvBuilder::check_path(&path, self.flags)?;
+            EnvBuilder::check_path(&path, self.flags)?;
         }
 
         let is_readonly = self.flags.contains(EnvCreateFlags::EnvCreateReadOnly);
@@ -634,7 +643,7 @@ impl EnvBuilder {
             let path_str = path.as_ref().to_str().ok_or(MdbError::InvalidPath)?;
             let c_path = CString::new(path_str).map_err(|_| MdbError::InvalidPath)?;
 
-            ffi::mdb_env_open(mem::transmute(env), c_path.as_ref().as_ptr(), self.flags.bits(),
+            ffi::mdb_env_open(env, c_path.as_ref().as_ptr(), self.flags.bits(),
                               perms as ffi::mdb_mode_t)
         };
 
@@ -644,7 +653,7 @@ impl EnvBuilder {
                 Ok(Environment::from_raw(env, is_readonly))
             },
             _ => {
-                unsafe { ffi::mdb_env_close(mem::transmute(env)); }
+                unsafe { ffi::mdb_env_close(env); }
                 Err(MdbError::new_with_code(res))
             }
         }
@@ -689,7 +698,7 @@ struct EnvHandle(*mut ffi::MDB_env);
 impl Drop for EnvHandle {
     fn drop(&mut self) {
         unsafe {
-            if self.0 != ptr::null_mut() {
+            if !self.0.is_null() {
                 ffi::mdb_env_close(self.0);
             }
         }
@@ -699,7 +708,7 @@ impl Drop for EnvHandle {
 /// Represents LMDB Environment. Should be opened using `EnvBuilder`
 #[derive(Debug)]
 pub struct Environment {
-    env: Arc<EnvHandle>,
+    env: Rc<EnvHandle>,
     db_cache: Arc<Mutex<UnsafeCell<HashMap<String, ffi::MDB_dbi>>>>,
     is_readonly: bool, // true if opened in 'read-only' mode
 }
@@ -711,9 +720,9 @@ impl Environment {
 
     fn from_raw(env: *mut ffi::MDB_env, is_readonly: bool) -> Environment {
         Environment {
-            env: Arc::new(EnvHandle(env)),
+            env: Rc::new(EnvHandle(env)),
             db_cache: Arc::new(Mutex::new(UnsafeCell::new(HashMap::new()))),
-            is_readonly: is_readonly,
+            is_readonly,
         }
     }
 
@@ -822,14 +831,12 @@ impl Environment {
         if self.is_readonly {
             return Err(MdbError::StateError("Error: creating read-write transaction in read-only environment".to_owned()))
         }
-        self.create_transaction(None, 0)
-            .and_then(|txn| Ok(Transaction::new_with_native(txn)))
+        self.create_transaction(None, 0).map(Transaction::new_with_native)
     }
 
     /// Creates a readonly transaction
     pub fn get_reader(&self) -> MdbResult<ReadonlyTransaction> {
-        self.create_transaction(None, ffi::MDB_RDONLY)
-            .and_then(|txn| Ok(ReadonlyTransaction::new_with_native(txn)))
+        self.create_transaction(None, ffi::MDB_RDONLY).map(ReadonlyTransaction::new_with_native)
     }
 
     fn _open_db(&self, db_name: & str, flags: DbFlags, force_creation: bool) -> MdbResult<ffi::MDB_dbi> {
@@ -843,7 +850,7 @@ impl Environment {
         match self.db_cache.lock() {
             Err(_) => Err(MdbError::CacheError),
             Ok(guard) => {
-                let ref cell = *guard;
+                let cell = &(guard);
                 let cache = cell.get();
 
                 unsafe {
@@ -857,7 +864,7 @@ impl Environment {
                     let txflags = if self.is_readonly { ffi::MDB_RDONLY } else { 0 };
                     self.create_transaction(None, txflags)?
                 };
-                let opt_name = if db_name.len() > 0 {Some(db_name)} else {None};
+                let opt_name = if !db_name.is_empty() {Some(db_name)} else {None};
                 let flags = if force_creation {flags | DbFlags::DbCreate} else {flags - DbFlags::DbCreate};
 
                 let mut db: ffi::MDB_dbi = 0;
@@ -887,13 +894,13 @@ impl Environment {
     /// Opens existing DB
     pub fn get_db(& self, db_name: &str, flags: DbFlags) -> MdbResult<DbHandle> {
         let db = self._open_db(db_name, flags, false)?;
-        Ok(DbHandle {handle: db, flags: flags})
+        Ok(DbHandle {handle: db, flags })
     }
 
     /// Opens or creates a DB
     pub fn create_db(&self, db_name: &str, flags: DbFlags) -> MdbResult<DbHandle> {
         let db = self._open_db(db_name, flags, true)?;
-        Ok(DbHandle {handle: db, flags: flags})
+        Ok(DbHandle {handle: db, flags })
     }
 
     /// Opens default DB with specified flags
@@ -905,7 +912,7 @@ impl Environment {
         match self.db_cache.lock() {
             Err(_) => (),
             Ok(guard) => {
-                let ref cell = *guard;
+                let cell = &(guard);
 
                 unsafe {
                     let cache = cell.get();
@@ -975,9 +982,9 @@ impl<'a> NativeTransaction<'a> {
         // debug!("new native txn");
         NativeTransaction {
             handle: h,
-            flags: flags,
+            flags,
             state: TransactionState::Normal,
-            env: env,
+            env,
         }
     }
 
@@ -1185,13 +1192,11 @@ impl<'a> Transaction<'a> {
     }
 
     pub fn new_child(&self) -> MdbResult<Transaction> {
-        self.inner.new_child(0)
-            .and_then(|txn| Ok(Transaction::new_with_native(txn)))
+        self.inner.new_child(0).map(Transaction::new_with_native)
     }
 
     pub fn new_ro_child(&self) -> MdbResult<ReadonlyTransaction> {
-        self.inner.new_child(ffi::MDB_RDONLY)
-            .and_then(|txn| Ok(ReadonlyTransaction::new_with_native(txn)))
+        self.inner.new_child(ffi::MDB_RDONLY).map(ReadonlyTransaction::new_with_native)
     }
 
     /// Commits transaction, moves it out
@@ -1227,8 +1232,7 @@ impl<'a> ReadonlyTransaction<'a> {
     }
 
     pub fn new_ro_child(&self) -> MdbResult<ReadonlyTransaction> {
-        self.inner.new_child(ffi::MDB_RDONLY)
-            .and_then(|txn| Ok(ReadonlyTransaction::new_with_native(txn)))
+        self.inner.new_child(ffi::MDB_RDONLY).map(ReadonlyTransaction::new_with_native)
 
     }
 
@@ -1263,11 +1267,7 @@ trait IsLess {
 
 impl IsLess for Ordering {
     fn is_less(&self, or_equal: bool) -> bool {
-        match (*self, or_equal) {
-            (Ordering::Less, _) => true,
-            (Ordering::Equal, true) => true,
-            _ => false,
-        }
+        matches!((*self, or_equal), (Ordering::Less, _) | (Ordering::Equal, true))
     }
 }
 
@@ -1300,8 +1300,8 @@ impl<'txn> Cursor<'txn> {
             handle: tmp,
             data_val: unsafe { std::mem::zeroed() },
             key_val: unsafe { std::mem::zeroed() },
-            txn: txn,
-            db: db,
+            txn,
+            db,
             valid_key: false,
         })
     }
@@ -1408,8 +1408,8 @@ impl<'txn> Cursor<'txn> {
         let (k, v) = self.get_plain()?;
 
         unsafe {
-            Ok((FromMdbValue::from_mdb_value(mem::transmute(&k)),
-                FromMdbValue::from_mdb_value(mem::transmute(&v))))
+            Ok((FromMdbValue::from_mdb_value(mem::transmute::<&MdbValue<'_>, &MdbValue<'_>>(&k)),
+                FromMdbValue::from_mdb_value(mem::transmute::<&MdbValue<'_>, &MdbValue<'_>>(&v))))
         }
     }
 
@@ -1418,7 +1418,7 @@ impl<'txn> Cursor<'txn> {
         let (_, v) = self.get_plain()?;
 
         unsafe {
-            Ok(FromMdbValue::from_mdb_value(mem::transmute(&v)))
+            Ok(FromMdbValue::from_mdb_value(mem::transmute::<&MdbValue<'_>, &MdbValue<'_>>(&v)))
         }
     }
 
@@ -1427,7 +1427,7 @@ impl<'txn> Cursor<'txn> {
         let (k, _) = self.get_plain()?;
 
         unsafe {
-            Ok(FromMdbValue::from_mdb_value(mem::transmute(&k)))
+            Ok(FromMdbValue::from_mdb_value(mem::transmute::<&MdbValue<'_>, &MdbValue<'_>>(&k)))
         }
     }
 
@@ -1641,9 +1641,9 @@ impl<'c, I: IterateCursor + 'c> CursorIterator<'c, I> {
         let mut cursor = cursor;
         let has_data = inner.init_cursor(&mut cursor);
         CursorIterator {
-            inner: inner,
-            has_data: has_data,
-            cursor: cursor,
+            inner,
+            has_data,
+            cursor,
             marker: ::std::marker::PhantomData,
         }
     }
@@ -1664,7 +1664,7 @@ impl<'c, I: IterateCursor + 'c> Iterator for CursorIterator<'c, I> {
             match self.cursor.get_plain() {
                 Err(_) => None,
                 Ok((k, v)) => {
-                    self.has_data = unsafe { self.inner.move_to_next(mem::transmute(&mut self.cursor)) };
+                    self.has_data = unsafe { self.inner.move_to_next(mem::transmute::<&mut Cursor<'_>, &mut Cursor<'_>>(&mut self.cursor)) };
                     Some(CursorValue {
                         key: k,
                         value: v,
@@ -1693,7 +1693,7 @@ impl<'a> CursorKeyRangeIter<'a> {
         CursorKeyRangeIter {
             start_key: start_key.to_mdb_value(),
             end_key: end_key.to_mdb_value(),
-            end_inclusive: end_inclusive,
+            end_inclusive,
             marker: ::std::marker::PhantomData,
         }
     }
@@ -1783,7 +1783,7 @@ impl<'iter> IterateCursor for CursorToKeyIter<'iter> {
 pub struct CursorIter;
 
 
-impl<'iter> IterateCursor for CursorIter {
+impl IterateCursor for CursorIter {
     fn init_cursor<'a, 'b: 'a>(&'a self, cursor: & mut Cursor<'b>) -> bool {
         cursor.to_first().is_ok()
     }
@@ -1824,7 +1824,7 @@ impl<'iter> IterateCursor for CursorItemIter<'iter> {
     fn get_size_hint(&self, c: &Cursor) -> (usize, Option<usize>) {
         match c.item_count() {
             Err(_) => (0, None),
-            Ok(cnt) => (0, Some(cnt as usize))
+            Ok(cnt) => (0, Some(cnt))
         }
     }
 }
@@ -1837,6 +1837,9 @@ pub struct MdbValue<'a> {
 }
 
 impl<'a> MdbValue<'a> {
+    /// # Safety
+    ///  
+    /// caller is responsible for safety
     #[inline]
     pub unsafe fn new(data: *const c_void, len: usize) -> MdbValue<'a> {
         MdbValue {
@@ -1848,18 +1851,28 @@ impl<'a> MdbValue<'a> {
         }
     }
 
+
+    /// # Safety
+    ///  
+    /// caller is responsible for safety
     #[inline]
     pub unsafe fn from_raw(mdb_val: *const ffi::MDB_val) -> MdbValue<'a> {
-        MdbValue::new((*mdb_val).mv_data, (*mdb_val).mv_size as usize)
+        MdbValue::new((*mdb_val).mv_data, (*mdb_val).mv_size)
     }
 
+    /// # Safety
+    ///  
+    /// caller is responsible for safety
     #[inline]
     pub fn new_from_sized<T>(data: &'a T) -> MdbValue<'a> {
         unsafe {
-            MdbValue::new(mem::transmute(data), mem::size_of::<T>())
+            MdbValue::new(data as *const T as *const libc::c_void, mem::size_of::<T>())
         }
     }
 
+    /// # Safety
+    ///  
+    /// caller is responsible for safety
     #[inline]
     pub unsafe fn get_ref(&'a self) -> *const c_void {
         self.value.mv_data
@@ -1867,6 +1880,6 @@ impl<'a> MdbValue<'a> {
 
     #[inline]
     pub fn get_size(&self) -> usize {
-        self.value.mv_size as usize
+        self.value.mv_size
     }
 }

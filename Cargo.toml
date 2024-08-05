@@ -1,6 +1,6 @@
 [package]
 name = "kn0sys-lmdb-rs"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Nigel Christian <nigel.christian@hiahatf.org>"]
 license = "MIT"
 description = "LMDB bindings"
