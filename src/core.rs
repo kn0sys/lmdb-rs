@@ -1862,9 +1862,40 @@ impl<'a> MdbValue<'a> {
 
     /// # Safety
     ///  
-    /// caller is responsible for safety
+    /// caller is responsible for safety.
+    /// 
+    /// See github issue: https://github.com/kn0sys/valentinus/issues/11
+    /// 
+    /// # Example
+    /// 
+    /// the following code will lead to UB
+    /// 
+    /// ```rust
+    /// use kn0sys_lmdb_rs::FromMdbValue;
+    /// use kn0sys_lmdb_rs::MdbValue;
+    /// 
+    /// unsafe {
+    ///     let a: i32 = 3;
+    ///     let mdbval = MdbValue::new_from_sized(&a);
+    ///     // let res = i64::from_mdb_value(&mdbval);
+    ///     // println!("{:?}", res);
+    /// }
+    /// ```
+    /// 
+    /// Use the correct types instead: 
+    /// ```rust
+    /// use kn0sys_lmdb_rs::FromMdbValue;
+    /// use kn0sys_lmdb_rs::MdbValue;
+    /// 
+    /// unsafe {
+    ///     let a: i64 = 3;
+    ///     let mdbval = MdbValue::new_from_sized(&a);
+    ///     let res = i64::from_mdb_value(&mdbval);
+    ///     println!("{:?}", res);
+    /// }
+    /// ```
     #[inline]
-    pub fn new_from_sized<T>(data: &'a T) -> MdbValue<'a> {
+    pub unsafe fn new_from_sized<T>(data: &'a T) -> MdbValue<'a> {
         unsafe {
             MdbValue::new(data as *const T as *const libc::c_void, mem::size_of::<T>())
         }

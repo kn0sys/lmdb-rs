@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Once;
 use std::thread;
 
-use libc::c_int;
+use libc::intmax_t;
 
 use core::*;
 use ffi::MDB_val;
@@ -691,8 +691,8 @@ fn test_keyrange_init_cursor() {
     {
         let db = txn.bind(&db);
 
-        let start_key = 10;
-        let end_key = 20;
+        let start_key: i64 = 10;
+        let end_key: i64 = 20;
         let iter = db.keyrange(&start_key, &end_key).unwrap();
 
         let res: Vec<_> = iter.map(|cv| cv.get_value::<u64>()).collect();
@@ -732,7 +732,7 @@ fn test_keyrange_from_to() {
 
 #[test]
 fn test_readonly_env() {
-    let recs: Vec<(u32,u32)> = vec![(10, 11), (11, 12), (12, 13), (13,14)];
+    let recs: Vec<(u64,u64)> = vec![(10, 11), (11, 12), (12, 13), (13,14)];
 
     // ~ first create a new read-write environment with its default
     // database containing a few entries
@@ -760,15 +760,15 @@ fn test_readonly_env() {
     let mut tx = ro_env.get_reader().unwrap();
     {
         let db = tx.bind(&dbh);
-        let kvs: Vec<(u32,u32)> = db.iter().unwrap().map(|c| c.get()).collect();
+        let kvs: Vec<(u64,u64)> = db.iter().unwrap().map(|c| c.get()).collect();
         assert_eq!(recs, kvs);
     }
     tx.abort();
 }
 
-unsafe fn negative_if_odd_i32_val(val: *const MDB_val) -> i32 {
+unsafe fn negative_if_odd_i64_val(val: *const MDB_val) -> i64 {
     let v = MdbValue::from_raw(val);
-    let i = i32::from_mdb_value(&v);
+    let i = i64::from_mdb_value(&v);
     if i % 2 == 0 {
         i
     } else {
@@ -777,10 +777,10 @@ unsafe fn negative_if_odd_i32_val(val: *const MDB_val) -> i32 {
 }
 
 // A nonsensical comparison function that sorts differently that byte-by-byte comparison
-extern "C" fn negative_odd_cmp_fn(lhs_val: *const MDB_val, rhs_val: *const MDB_val) -> c_int {
+extern "C" fn negative_odd_cmp_fn(lhs_val: *const MDB_val, rhs_val: *const MDB_val) -> intmax_t {
     unsafe {
-        let lhs = negative_if_odd_i32_val(lhs_val);
-        let rhs = negative_if_odd_i32_val(rhs_val);
+        let lhs = negative_if_odd_i64_val(lhs_val);
+        let rhs = negative_if_odd_i64_val(rhs_val);
         lhs - rhs
     }
 }
@@ -790,24 +790,14 @@ fn test_compare() {
     let env = EnvBuilder::new().open(&next_path(), USER_DIR).unwrap();
     let db_handle = env.get_default_db(DbFlags::empty()).unwrap();
     let txn = env.new_transaction().unwrap();
-    let val: i32 = 0;
+    let val: i64 = 0;
     {
         let db = txn.bind(&db_handle);
         assert!(db.set_compare(negative_odd_cmp_fn).is_ok());
 
-        let i: i32 = 2;
+        let i: i64 = 2;
         db.set(&i, &val).unwrap();
-        let i: i32 = 3;
-        db.set(&i, &val).unwrap();
-    }
-    assert!(txn.commit().is_ok());
-
-    let txn = env.new_transaction().unwrap();
-    {
-        let db = txn.bind(&db_handle);
-        let i: i32 = 4;
-        db.set(&i, &val).unwrap();
-        let i: i32 = 5;
+        let i: i64 = 3;
         db.set(&i, &val).unwrap();
     }
     assert!(txn.commit().is_ok());
@@ -815,7 +805,17 @@ fn test_compare() {
     let txn = env.new_transaction().unwrap();
     {
         let db = txn.bind(&db_handle);
-        let keys: Vec<_> = db.iter().unwrap().map(|cv| cv.get_key::<i32>()).collect();
+        let i: i64 = 4;
+        db.set(&i, &val).unwrap();
+        let i: i64 = 5;
+        db.set(&i, &val).unwrap();
+    }
+    assert!(txn.commit().is_ok());
+
+    let txn = env.new_transaction().unwrap();
+    {
+        let db = txn.bind(&db_handle);
+        let keys: Vec<_> = db.iter().unwrap().map(|cv| cv.get_key::<i64>()).collect();
         assert_eq!(keys, [5, 3, 2, 4]);
     }
     assert!(txn.commit().is_ok());
@@ -826,24 +826,14 @@ fn test_dupsort() {
     let env = EnvBuilder::new().open(&next_path(), USER_DIR).unwrap();
     let db_handle = env.get_default_db(DbFlags::DbAllowDups).unwrap();
     let txn = env.new_transaction().unwrap();
-    let key: i32 = 0;
+    let key: i64 = 0;
     {
         let db = txn.bind(&db_handle);
         assert!(db.set_dupsort(negative_odd_cmp_fn).is_ok());
 
-        let i: i32 = 2;
+        let i: i64 = 2;
         db.set(&key, &i).unwrap();
-        let i: i32 = 3;
-        db.set(&key, &i).unwrap();
-    }
-    assert!(txn.commit().is_ok());
-
-    let txn = env.new_transaction().unwrap();
-    {
-        let db = txn.bind(&db_handle);
-        let i: i32 = 4;
-        db.set(&key, &i).unwrap();
-        let i: i32 = 5;
+        let i: i64 = 3;
         db.set(&key, &i).unwrap();
     }
     assert!(txn.commit().is_ok());
@@ -851,7 +841,17 @@ fn test_dupsort() {
     let txn = env.new_transaction().unwrap();
     {
         let db = txn.bind(&db_handle);
-        let vals: Vec<_> = db.item_iter(&key).unwrap().map(|cv| cv.get_value::<i32>()).collect();
+        let i: i64 = 4;
+        db.set(&key, &i).unwrap();
+        let i: i64 = 5;
+        db.set(&key, &i).unwrap();
+    }
+    assert!(txn.commit().is_ok());
+
+    let txn = env.new_transaction().unwrap();
+    {
+        let db = txn.bind(&db_handle);
+        let vals: Vec<_> = db.item_iter(&key).unwrap().map(|cv| cv.get_value::<i64>()).collect();
         assert_eq!(vals, [5, 3, 2, 4]);
     }
     assert!(txn.commit().is_ok());
@@ -860,7 +860,7 @@ fn test_dupsort() {
 // ~ see #29
 #[test]
 fn test_conversion_to_vecu8() {
-    let rec: (u32, Vec<u8>) = (10, vec![1,2,3,4,5]);
+    let rec: (u64, Vec<u8>) = (10, vec![1,2,3,4,5]);
 
     let path = next_path();
     let env = EnvBuilder::new().open(&path, USER_DIR).unwrap();
@@ -893,7 +893,7 @@ fn test_conversion_to_vecu8() {
 // ~ see #29
 #[test]
 fn test_conversion_to_string() {
-    let rec: (u32, String) = (10, "hello, world".to_owned());
+    let rec: (u64, String) = (10, "hello, world".to_owned());
 
     let path = next_path();
     let env = EnvBuilder::new().open(&path, USER_DIR).unwrap();
@@ -923,25 +923,12 @@ fn test_conversion_to_string() {
     tx.abort();
 }
 
-/*
 #[test]
-fn test_compilation_of_moved_items() {
-    let path = Path::new("dbcom");
-    test_db_in_path(&next_path(), || {
-        let mut env = EnvBuilder::new()
-            .max_dbs(5)
-            .open(&next_path(), USER_DIR)
-            .unwrap();
-
-        let db = env.get_default_db(DbFlags::empty()).unwrap();
-        let mut txn = env.new_transaction().unwrap();
-
-        txn.commit();
-
-        let test_key1 = "key1";
-        let test_data1 = "value1";
-
-        assert!(db.get::<()>(&txn, &test_key1).is_err(), "Key shouldn't exist yet"); // ~ERROR: use of moved value
-    })
+fn unsoundness_test() {
+    unsafe {
+        let a: i64 = 3;
+        let mdbval = MdbValue::new_from_sized(&a);
+        let res = i64::from_mdb_value(&mdbval);
+        println!("{:?}", res);
+    }
 }
-*/

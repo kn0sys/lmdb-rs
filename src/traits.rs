@@ -146,7 +146,9 @@ macro_rules! mdb_for_primitive {
     ($t:ty) => (
         impl ToMdbValue for $t {
             fn to_mdb_value(&self) -> MdbValue {
-                MdbValue::new_from_sized(self)
+                unsafe {
+                    MdbValue::new_from_sized(self)
+                }
             }
         }
 
