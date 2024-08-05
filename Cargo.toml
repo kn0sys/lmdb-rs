@@ -1,11 +1,11 @@
 [package]
-name = "lmdb-rs"
-version = "0.7.6"
-authors = ["Valerii Hiora <valerii.hiora@gmail.com>"]
+name = "kn0sys-lmdb-rs"
+version = "0.1.0"
+authors = ["Nigel Christian <nigel.christian@hiahatf.org>"]
 license = "MIT"
 description = "LMDB bindings"
-repository = "https://github.com/vhbit/lmdb-rs"
-documentation = "https://vhbit.github.io/lmdb-rs/lmdb_rs"
+repository = "https://github.com/kn0sys/lmdb-rs"
+documentation = "https://docs.rs/kn0sys-lmdb-rs"
 readme = "README.md"
 keywords = ["lmdb", "db", "key-value", "kvs", "kv"]
 exclude = [
@@ -21,4 +21,4 @@ version = "0.2.2"
 [dependencies]
 log = "0.3"
 libc = "0.2"
-bitflags = "0.7"
+bitflags = "2.6.0"
