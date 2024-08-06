@@ -59,8 +59,8 @@ use std::sync::{Arc, Mutex};
 use ffi::{self, MDB_val};
 pub use MdbError::{NotFound, KeyExists, Other, StateError, Corrupted, Panic};
 pub use MdbError::{InvalidPath, TxnFull, CursorFull, PageFull, CacheError};
-use traits::{ToMdbValue, FromMdbValue};
-use utils::error_msg;
+use crate::traits::{ToMdbValue, FromMdbValue};
+use crate::utils::error_msg;
 
 
 macro_rules! lift_mdb {
@@ -1865,33 +1865,7 @@ impl<'a> MdbValue<'a> {
     /// 
     /// See github issue: https://github.com/kn0sys/valentinus/issues/11
     /// 
-    /// # Example
-    /// 
-    /// the following code will lead to UB
-    /// 
-    /// ```rust
-    /// use kn0sys_lmdb_rs::FromMdbValue;
-    /// use kn0sys_lmdb_rs::MdbValue;
-    /// 
-    /// unsafe {
-    ///     let a: i32 = 3;
-    ///     let mdbval = MdbValue::new_from_sized(&a);
-    ///     // let res = i64::from_mdb_value(&mdbval);
-    ///     // println!("{:?}", res);
-    /// }
-    /// ```
-    /// 
-    /// Use the correct types instead: 
-    /// ```rust
-    /// use kn0sys_lmdb_rs::FromMdbValue;
-    /// use kn0sys_lmdb_rs::MdbValue;
-    /// 
-    /// unsafe {
-    ///     let a: i64 = 3;
-    ///     let mdbval = MdbValue::new_from_sized(&a);
-    ///     let res = i64::from_mdb_value(&mdbval);
-    ///     println!("{:?}", res);
-    /// }
+    /// Primitive transmutations are removed as of release v0.1.2
     /// ```
     #[inline]
     pub unsafe fn new_from_sized<T>(data: &'a T) -> MdbValue<'a> {

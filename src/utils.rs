@@ -1,5 +1,5 @@
 use libc::c_int;
-use std::ffi::{CStr};
+use std::ffi::CStr;
 
 use ffi::mdb_strerror;
 

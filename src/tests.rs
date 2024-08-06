@@ -4,11 +4,12 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Once;
 use std::thread;
 
-use libc::{c_int, intmax_t};
+use libc::c_int;
 
-use core::*;
+use self::core::*;
 use ffi::MDB_val;
-use traits::FromMdbValue;
+use crate::traits::FromMdbValue;
+use crate::*;
 
 const USER_DIR: u32 = 0o777;
 static TEST_ROOT_DIR: &'static str = "test-dbs";
@@ -351,31 +352,35 @@ fn test_cursor_item_manip() {
     let db = txn.bind(&db);
 
     let test_key1 = "key1";
+    let test_val_3 = 3u64.to_be_bytes().to_vec();
+    let test_val_4 = 4u64.to_be_bytes().to_vec();
+    let test_val_5 = 5u64.to_be_bytes().to_vec();
+    let test_val_6 = 6u64.to_be_bytes().to_vec();
 
-    assert!(db.set(&test_key1, &3u64).is_ok());
+    assert!(db.set(&test_key1, &test_val_3).is_ok());
 
     let mut cursor = db.new_cursor().unwrap();
     assert!(cursor.to_key(&test_key1).is_ok());
 
-    let values: Vec<u64> = db.item_iter(&test_key1).unwrap()
-        .map(|cv| cv.get_value::<u64>())
+    let values: Vec<Vec<u8>> = db.item_iter(&test_key1).unwrap()
+        .map(|cv| cv.get_value::<Vec<u8>>())
         .collect();
-    assert_eq!(values, vec![3u64]);
+    assert_eq!(values, vec![test_val_3.to_vec()]);
 
-    assert!(cursor.add_item(&4u64).is_ok());
-    assert!(cursor.add_item(&5u64).is_ok());
+    assert!(cursor.add_item(&test_val_4).is_ok());
+    assert!(cursor.add_item(&test_val_5).is_ok());
 
-    let values: Vec<u64> = db.item_iter(&test_key1).unwrap()
-        .map(|cv| cv.get_value::<u64>())
+    let values: Vec<Vec<u8>> = db.item_iter(&test_key1).unwrap()
+        .map(|cv| cv.get_value::<Vec<u8>>())
         .collect();
-    assert_eq!(values, vec![3u64, 4, 5]);
+    assert_eq!(values, vec![test_val_3.to_vec(), test_val_4.to_vec(), test_val_5.to_vec()]);
 
-    assert!(cursor.replace(&6u64).is_ok());
-    let values: Vec<u64> = db.item_iter(&test_key1).unwrap()
-        .map(|cv| cv.get_value::<u64>())
+    assert!(cursor.replace(&test_val_6).is_ok());
+    let values: Vec<Vec<u8>> = db.item_iter(&test_key1).unwrap()
+        .map(|cv| cv.get_value::<Vec<u8>>())
         .collect();
 
-    assert_eq!(values, vec![3u64, 4, 6]);
+    assert_eq!(values, vec![test_val_3, test_val_4, test_val_6]);
 }
 
 fn as_slices(v: &Vec<String>) -> Vec<&str> {
@@ -498,8 +503,14 @@ fn test_multithread_env() {
 fn test_keyrange_to() {
     let env = EnvBuilder::new().open(&next_path(), USER_DIR).unwrap();
     let db = env.get_default_db(DbFlags::DbIntKey).unwrap();
-    let keys:   Vec<u64> = vec![1, 2, 3];
-    let values: Vec<u64> = vec![5, 6, 7];
+    let one = 1_i32.to_be_bytes().to_vec();
+    let two = 2_i32.to_be_bytes().to_vec();
+    let three = 3_i32.to_be_bytes().to_vec();
+    let four = 4_i32.to_be_bytes().to_vec();
+    let five = 5_i32.to_be_bytes().to_vec();
+    let six = 6_i32.to_be_bytes().to_vec();
+    let keys:   Vec<Vec<u8>> = vec![one, two, three];
+    let values: Vec<Vec<u8>> = vec![four, five, six];
 
     // to avoid problems caused by updates
     assert_eq!(keys.len(), values.len());
@@ -507,7 +518,7 @@ fn test_keyrange_to() {
     let txn = env.new_transaction().unwrap();
     {
         let db = txn.bind(&db);
-        for (k, v) in keys.iter().zip(values.iter()) {
+        for (k, v) in keys.clone().iter().zip(values.iter()) {
             assert!(db.set(k, v).is_ok());
         }
     }
@@ -518,11 +529,11 @@ fn test_keyrange_to() {
         let db = txn.bind(&db);
 
         let last_idx = keys.len() - 1;
-        let last_key: u64 = keys[last_idx];
+        let last_key: &Vec<u8> = &keys[last_idx];
         // last key is excluded
-        let iter = db.keyrange_to(&last_key).unwrap();
+        let iter = db.keyrange_to(last_key).unwrap();
 
-        let res: Vec<_> = iter.map(|cv| cv.get_value::<u64>()).collect();
+        let res: Vec<_> = iter.map(|cv| cv.get_value::<Vec<u8>>()).collect();
         assert_eq!(res, &values[..last_idx]);
     }
 }
@@ -533,13 +544,19 @@ fn test_keyrange_to() {
 fn test_keyrange_to_init_cursor() {
     let env = EnvBuilder::new().open(&next_path(), USER_DIR).unwrap();
     let db = env.get_default_db(DbFlags::DbIntKey).unwrap();
-    let recs: Vec<(u64, u64)> = vec![(10, 50), (11, 60), (12, 70)];
+    let ten = 10_u32.to_be_bytes().to_vec();
+    let fifty = 50_u32.to_be_bytes().to_vec();
+    let eleven = 11_u32.to_be_bytes().to_vec();
+    let sixty = 60_u32.to_be_bytes().to_vec();
+    let twelve = 12_u32.to_be_bytes().to_vec();
+    let seventy = 70_u32.to_be_bytes().to_vec();
+    let recs: Vec<(Vec<u8>, Vec<u8>)> = vec![(ten, fifty), (eleven, sixty), (twelve, seventy)];
 
     let txn = env.new_transaction().unwrap();
     {
         let db = txn.bind(&db);
-        for &(k, v) in recs.iter() {
-            assert!(db.set(&k, &v).is_ok());
+        for (k, v) in recs.iter() {
+            assert!(db.set(k, v).is_ok());
         }
     }
     assert!(txn.commit().is_ok());
@@ -549,11 +566,11 @@ fn test_keyrange_to_init_cursor() {
         let db = txn.bind(&db);
 
         // last key is excluded
-        let upper_bound: u64 = 1;
+        let upper_bound: Vec<u8> = 1_u32.to_be_bytes().to_vec();
         let iter = db.keyrange_to(&upper_bound).unwrap();
 
-        let res: Vec<_> = iter.map(|cv| cv.get_value::<u64>()).collect();
-        assert_eq!(res, &[]);
+        let res: Vec<_> = iter.map(|cv| cv.get_value::<Vec<u8>>()).collect();
+        assert!(res.is_empty());
     }
 }
 
@@ -561,8 +578,14 @@ fn test_keyrange_to_init_cursor() {
 fn test_keyrange_from() {
     let env = EnvBuilder::new().open(&next_path(), USER_DIR).unwrap();
     let db = env.get_default_db(DbFlags::DbIntKey).unwrap();
-    let keys:   Vec<u64> = vec![1, 2, 3];
-    let values: Vec<u64> = vec![5, 6, 7];
+    let one = 1_u32.to_be_bytes().to_vec();
+    let two = 2_u32.to_be_bytes().to_vec();
+    let three = 3_u32.to_be_bytes().to_vec();
+    let seven = 7_u32.to_be_bytes().to_vec();
+    let five = 5_u32.to_be_bytes().to_vec();
+    let six = 6_u32.to_be_bytes().to_vec();
+    let keys:   Vec<Vec<u8>> = vec![one, two, three];
+    let values: Vec<Vec<u8>> = vec![five, six, seven];
 
     // to avoid problems caused by updates
     assert_eq!(keys.len(), values.len());
@@ -581,10 +604,10 @@ fn test_keyrange_from() {
         let db = txn.bind(&db);
 
         let start_idx = 1; // second key
-        let last_key: u64 = keys[start_idx];
-        let iter = db.keyrange_from(&last_key).unwrap();
+        let last_key: &Vec<u8> = &keys[start_idx];
+        let iter = db.keyrange_from(last_key).unwrap();
 
-        let res: Vec<_> = iter.map(|cv| cv.get_value::<u64>()).collect();
+        let res: Vec<_> = iter.map(|cv| cv.get_value::<Vec<u8>>()).collect();
         assert_eq!(res, &values[start_idx..]);
     }
 }
@@ -595,13 +618,19 @@ fn test_keyrange_from() {
 fn test_keyrange_from_init_cursor() {
     let env = EnvBuilder::new().open(&next_path(), USER_DIR).unwrap();
     let db = env.get_default_db(DbFlags::DbIntKey).unwrap();
-    let recs: Vec<(u64, u64)> = vec![(10, 50), (11, 60), (12, 70)];
+    let ten = 10_u32.to_be_bytes().to_vec();
+    let fifty = 50_u32.to_be_bytes().to_vec();
+    let eleven = 11_u32.to_be_bytes().to_vec();
+    let sixty = 60_u32.to_be_bytes().to_vec();
+    let twelve = 12_u32.to_be_bytes().to_vec();
+    let seventy = 70_u32.to_be_bytes().to_vec();
+    let recs: Vec<(Vec<u8>, Vec<u8>)> = vec![(ten, fifty), (eleven, sixty), (twelve, seventy)];
 
     let txn = env.new_transaction().unwrap();
     {
         let db = txn.bind(&db);
-        for &(k, v) in recs.iter() {
-            assert!(db.set(&k, &v).is_ok());
+        for (k, v) in recs.clone().iter() {
+            assert!(db.set(k, v).is_ok());
         }
     }
     assert!(txn.commit().is_ok());
@@ -611,11 +640,17 @@ fn test_keyrange_from_init_cursor() {
         let db = txn.bind(&db);
 
         // last key is excluded
-        let lower_bound = recs[recs.len()-1].0 + 1;
+        let v_val = &recs.clone()[recs.clone().len()-1].0;
+        let mut t_val: [u8; 4] = [0_u8; 4];
+        for i in 0..t_val.len() {
+            t_val[i] = v_val[i];
+        }
+        let lower_bound = (u32::from_be_bytes(t_val) + 1).to_be_bytes().to_vec();
+        // let lower_bound = recs[recs.len()-1].0 + 1_u32.to_be_bytes().to_vec();
         let iter = db.keyrange_from(&lower_bound).unwrap();
 
-        let res: Vec<_> = iter.map(|cv| cv.get_value::<u64>()).collect();
-        assert_eq!(res, &[]);
+        let res: Vec<_> = iter.map(|cv| cv.get_value::<Vec<u8>>()).collect();
+        assert!(res.is_empty());
     }
 }
 
@@ -623,8 +658,20 @@ fn test_keyrange_from_init_cursor() {
 fn test_keyrange() {
     let env = EnvBuilder::new().open(&next_path(), USER_DIR).unwrap();
     let db = env.get_default_db(DbFlags::DbAllowDups | DbFlags::DbIntKey).unwrap();
-    let keys:   Vec<u64> = vec![ 1,  2,  3,  4,  5,  6];
-    let values: Vec<u64> = vec![10, 11, 12, 13, 14, 15];
+    let one = 1_u32.to_be_bytes().to_vec();
+    let two = 2_u32.to_be_bytes().to_vec();
+    let three = 3_u32.to_be_bytes().to_vec();
+    let four = 4_u32.to_be_bytes().to_vec();
+    let five = 5_u32.to_be_bytes().to_vec();
+    let six = 6_u32.to_be_bytes().to_vec();
+    let keys: Vec<Vec<u8>> = vec![one,  two,  three,  four,  five,  six];
+    let ten = 10_u32.to_be_bytes().to_vec();
+    let eleven = 11_u32.to_be_bytes().to_vec();
+    let twelve = 12_u32.to_be_bytes().to_vec();
+    let thirteen = 13_u32.to_be_bytes().to_vec();
+    let fourteen = 14_u32.to_be_bytes().to_vec();
+    let fifteen = 15_u32.to_be_bytes().to_vec();
+    let values: Vec<Vec<u8>> = vec![ten, eleven, twelve, thirteen, fourteen, fifteen];
 
     // to avoid problems caused by updates
     assert_eq!(keys.len(), values.len());
@@ -646,7 +693,7 @@ fn test_keyrange() {
         let end_idx = 3;
         let iter = db.keyrange(&keys[start_idx], &keys[end_idx]).unwrap();
 
-        let res: Vec<_> = iter.map(|cv| cv.get_value::<u64>()).collect();
+        let res: Vec<_> = iter.map(|cv| cv.get_value::<Vec<u8>>()).collect();
 
          //  +1 as Rust slices do not include end
         assert_eq!(res, &values[start_idx.. end_idx + 1]);
@@ -659,8 +706,20 @@ fn test_keyrange() {
 fn test_keyrange_init_cursor() {
     let env = EnvBuilder::new().open(&next_path(), USER_DIR).unwrap();
     let db = env.get_default_db(DbFlags::DbAllowDups | DbFlags::DbIntKey).unwrap();
-    let keys:   Vec<u64> = vec![ 1,  2,  3,  4,  5,  6];
-    let values: Vec<u64> = vec![10, 11, 12, 13, 14, 15];
+    let one = 1_u32.to_be_bytes().to_vec();
+    let two = 2_u32.to_be_bytes().to_vec();
+    let three = 3_u32.to_be_bytes().to_vec();
+    let four = 4_u32.to_be_bytes().to_vec();
+    let five = 5_u32.to_be_bytes().to_vec();
+    let six = 6_u32.to_be_bytes().to_vec();
+    let keys: Vec<Vec<u8>> = vec![one,  two,  three,  four,  five,  six];
+    let ten = 10_u32.to_be_bytes().to_vec();
+    let eleven = 11_u32.to_be_bytes().to_vec();
+    let twelve = 12_u32.to_be_bytes().to_vec();
+    let thirteen = 13_u32.to_be_bytes().to_vec();
+    let fourteen = 14_u32.to_be_bytes().to_vec();
+    let fifteen = 15_u32.to_be_bytes().to_vec();
+    let values: Vec<Vec<u8>> = vec![ten, eleven, twelve, thirteen, fourteen, fifteen];
 
     // to avoid problems caused by updates
     assert_eq!(keys.len(), values.len());
@@ -679,23 +738,24 @@ fn test_keyrange_init_cursor() {
     {
         let db = txn.bind(&db);
 
-        let start_key = 0u64;
-        let end_key = 0u64;
+        let zero = 0u64.to_be_bytes().to_vec();
+        let start_key = zero.clone();
+        let end_key = zero;
         let iter = db.keyrange(&start_key, &end_key).unwrap();
 
-        let res: Vec<_> = iter.map(|cv| cv.get_value::<u64>()).collect();
-        assert_eq!(res, &[]);
+        let res: Vec<_> = iter.map(|cv| cv.get_value::<Vec<u8>>()).collect();
+        assert!(res.is_empty());
     }
 
     // test the cursor initialization after the available data range
     {
         let db = txn.bind(&db);
 
-        let start_key: i64 = 10;
-        let end_key: i64 = 20;
+        let start_key: Vec<u8> = 10_u32.to_be_bytes().to_vec();
+        let end_key: Vec<u8> = 10_u32.to_be_bytes().to_vec();
         let iter = db.keyrange(&start_key, &end_key).unwrap();
 
-        let res: Vec<_> = iter.map(|cv| cv.get_value::<u64>()).collect();
+        let res: Vec<_> = iter.map(|cv| cv.get_value::<Vec<u8>>()).collect();
         assert!(res.is_empty());
     }
 }
@@ -704,13 +764,29 @@ fn test_keyrange_init_cursor() {
 fn test_keyrange_from_to() {
     let env = EnvBuilder::new().open(&next_path(), USER_DIR).unwrap();
     let db = env.get_default_db(DbFlags::DbAllowDups | DbFlags::DbIntKey).unwrap();
-    let recs: Vec<(u64, u64)> = vec![(10, 11), (20, 21), (30, 31), (40, 41), (50, 51)];
+    let ten = 10_u32.to_be_bytes().to_vec();
+    let eleven = 11_u32.to_be_bytes().to_vec();
+    let twenty = 20_u32.to_be_bytes().to_vec();
+    let twenty_one = 21_u32.to_be_bytes().to_vec();
+    let thirty = 30_u32.to_be_bytes().to_vec();
+    let thirty_one = 31_u32.to_be_bytes().to_vec();
+    let fourty = 40_u32.to_be_bytes().to_vec();
+    let fourty_one = 41_u32.to_be_bytes().to_vec();
+    let fifty = 50_u32.to_be_bytes().to_vec();
+    let fifty_one = 51_u32.to_be_bytes().to_vec();
+    let recs: Vec<(Vec<u8>, Vec<u8>)> = vec![
+        (ten, eleven),
+        (twenty, twenty_one),
+        (thirty, thirty_one),
+        (fourty, fourty_one),
+        (fifty, fifty_one)
+    ];
 
     let txn = env.new_transaction().unwrap();
     {
         let db = txn.bind(&db);
-        for &(k, v) in recs.iter() {
-            assert!(db.set(&k, &v).is_ok());
+        for (k, v) in recs.clone().iter() {
+            assert!(db.set(k, v).is_ok());
         }
     }
     assert!(txn.commit().is_ok());
@@ -723,16 +799,23 @@ fn test_keyrange_from_to() {
         let end_idx = 3;
         let iter = db.keyrange_from_to(&recs[start_idx].0, &recs[end_idx].0).unwrap();
 
-        let res: Vec<_> = iter.map(|cv| cv.get_value::<u64>()).collect();
+        let res: Vec<_> = iter.map(|cv| cv.get_value::<Vec<u8>>()).collect();
         // ~ end_key must be excluded here
-        let exp: Vec<_> = recs[start_idx .. end_idx].iter().map(|x| x.1).collect();
+        let exp: Vec<_> = recs[start_idx .. end_idx].iter().map(|x| x.1.clone()).collect();
         assert_eq!(res, exp);
     }
 }
 
 #[test]
 fn test_readonly_env() {
-    let recs: Vec<(u64,u64)> = vec![(10, 11), (11, 12), (12, 13), (13,14)];
+    let ten = 10_u32.to_be_bytes().to_vec();
+    let eleven = 11_u32.to_be_bytes().to_vec();
+    let twelve = 12_u32.to_be_bytes().to_vec();
+    let thirteen = 13_u32.to_be_bytes().to_vec();
+    let fourteen = 14_u32.to_be_bytes().to_vec();
+    let recs: Vec<(Vec<u8>, Vec<u8>)> = vec![
+        (ten, eleven.clone()), (eleven, twelve.clone()), (twelve, thirteen.clone()), (thirteen, fourteen)
+    ];
 
     // ~ first create a new read-write environment with its default
     // database containing a few entries
@@ -743,7 +826,7 @@ fn test_readonly_env() {
         let tx = rw_env.new_transaction().unwrap();
         {
             let db = tx.bind(&dbh);
-            for &rec in recs.iter() {
+            for rec in recs.clone().iter() {
                 db.set(&rec.0, &rec.1).unwrap();
             }
         }
@@ -760,7 +843,7 @@ fn test_readonly_env() {
     let mut tx = ro_env.get_reader().unwrap();
     {
         let db = tx.bind(&dbh);
-        let kvs: Vec<(u64,u64)> = db.iter().unwrap().map(|c| c.get()).collect();
+        let kvs: Vec<(Vec<u8>, Vec<u8>)> = db.iter().unwrap().map(|c| c.get()).collect();
         assert_eq!(recs, kvs);
     }
     tx.abort();
@@ -768,7 +851,12 @@ fn test_readonly_env() {
 
 unsafe fn negative_if_odd_i64_val(val: *const MDB_val) -> i32 {
     let v = MdbValue::from_raw(val);
-    let i = i32::from_mdb_value(&v);
+    let v_val = Vec::from_mdb_value(&v);
+    let mut t_val: [u8; 4] = [0_u8; 4];
+    for i in 0..t_val.len() {
+        t_val[i] = v_val[i];
+    }
+    let i = i32::from_be_bytes(t_val);
     if i % 2 == 0 {
         i
     } else {
@@ -790,24 +878,18 @@ fn test_compare() {
     let env = EnvBuilder::new().open(&next_path(), USER_DIR).unwrap();
     let db_handle = env.get_default_db(DbFlags::empty()).unwrap();
     let txn = env.new_transaction().unwrap();
-    let val: i64 = 0;
+    let val: Vec<u8> = 0_u32.to_be_bytes().to_vec();
+    let two = 2_u32.to_be_bytes().to_vec();
+    let three = 3_u32.to_be_bytes().to_vec();
+    let four = 4_u32.to_be_bytes().to_vec();
+    let five = 5_u32.to_be_bytes().to_vec();
     {
         let db = txn.bind(&db_handle);
         assert!(db.set_compare(negative_odd_cmp_fn).is_ok());
 
-        let i: i64 = 2;
+        let i: Vec<u8> = two.clone();
         db.set(&i, &val).unwrap();
-        let i: i64 = 3;
-        db.set(&i, &val).unwrap();
-    }
-    assert!(txn.commit().is_ok());
-
-    let txn = env.new_transaction().unwrap();
-    {
-        let db = txn.bind(&db_handle);
-        let i: i64 = 4;
-        db.set(&i, &val).unwrap();
-        let i: i64 = 5;
+        let i: Vec<u8> = three.clone();
         db.set(&i, &val).unwrap();
     }
     assert!(txn.commit().is_ok());
@@ -815,8 +897,18 @@ fn test_compare() {
     let txn = env.new_transaction().unwrap();
     {
         let db = txn.bind(&db_handle);
-        let keys: Vec<_> = db.iter().unwrap().map(|cv| cv.get_key::<i64>()).collect();
-        assert_eq!(keys, [5, 3, 2, 4]);
+        let i: Vec<u8> = four.clone();
+        db.set(&i, &val).unwrap();
+        let i: Vec<u8> = five.clone();
+        db.set(&i, &val).unwrap();
+    }
+    assert!(txn.commit().is_ok());
+
+    let txn = env.new_transaction().unwrap();
+    {
+        let db = txn.bind(&db_handle);
+        let keys: Vec<_> = db.iter().unwrap().map(|cv| cv.get_key::<Vec<u8>>()).collect();
+        assert_eq!(keys, [five, three, two, four]);
     }
     assert!(txn.commit().is_ok());
 }
@@ -826,24 +918,18 @@ fn test_dupsort() {
     let env = EnvBuilder::new().open(&next_path(), USER_DIR).unwrap();
     let db_handle = env.get_default_db(DbFlags::DbAllowDups).unwrap();
     let txn = env.new_transaction().unwrap();
-    let key: i64 = 0;
+    let key: Vec<u8> = 0_u32.to_be_bytes().to_vec();
+    let two = 2_u32.to_be_bytes().to_vec();
+    let three = 3_u32.to_be_bytes().to_vec();
+    let four = 4_u32.to_be_bytes().to_vec();
+    let five = 5_u32.to_be_bytes().to_vec();
     {
         let db = txn.bind(&db_handle);
         assert!(db.set_dupsort(negative_odd_cmp_fn).is_ok());
 
-        let i: i64 = 2;
+        let i: Vec<u8> = two.clone();
         db.set(&key, &i).unwrap();
-        let i: i64 = 3;
-        db.set(&key, &i).unwrap();
-    }
-    assert!(txn.commit().is_ok());
-
-    let txn = env.new_transaction().unwrap();
-    {
-        let db = txn.bind(&db_handle);
-        let i: i64 = 4;
-        db.set(&key, &i).unwrap();
-        let i: i64 = 5;
+        let i: Vec<u8> = three.clone();
         db.set(&key, &i).unwrap();
     }
     assert!(txn.commit().is_ok());
@@ -851,16 +937,27 @@ fn test_dupsort() {
     let txn = env.new_transaction().unwrap();
     {
         let db = txn.bind(&db_handle);
-        let vals: Vec<_> = db.item_iter(&key).unwrap().map(|cv| cv.get_value::<i64>()).collect();
-        assert_eq!(vals, [5, 3, 2, 4]);
+        let i: Vec<u8> = four.clone();
+        db.set(&key, &i).unwrap();
+        let i: Vec<u8> = five.clone();
+        db.set(&key, &i).unwrap();
+    }
+    assert!(txn.commit().is_ok());
+
+    let txn = env.new_transaction().unwrap();
+    {
+        let db = txn.bind(&db_handle);
+        let vals: Vec<_> = db.item_iter(&key).unwrap().map(|cv| cv.get_value::<Vec<u8>>()).collect();
+        assert_eq!(vals, [five, three, two, four]);
     }
     assert!(txn.commit().is_ok());
 }
 
-// ~ see #29
+// // ~ see #29
 #[test]
 fn test_conversion_to_vecu8() {
-    let rec: (u64, Vec<u8>) = (10, vec![1,2,3,4,5]);
+    let ten = 10_u32.to_be_bytes().to_vec();
+    let rec: (Vec<u8>, Vec<u8>) = (ten, vec![1,2,3,4,5]);
 
     let path = next_path();
     let env = EnvBuilder::new().open(&path, USER_DIR).unwrap();
@@ -890,10 +987,11 @@ fn test_conversion_to_vecu8() {
     tx.abort();
 }
 
-// ~ see #29
+// // ~ see #29
 #[test]
 fn test_conversion_to_string() {
-    let rec: (u64, String) = (10, "hello, world".to_owned());
+    let ten = 10_u32.to_be_bytes().to_vec();
+    let rec: (Vec<u8>, String) = (ten, "hello, world".to_owned());
 
     let path = next_path();
     let env = EnvBuilder::new().open(&path, USER_DIR).unwrap();
@@ -921,14 +1019,4 @@ fn test_conversion_to_string() {
         }
     }
     tx.abort();
-}
-
-#[test]
-fn unsoundness_test() {
-    unsafe {
-        let a: i64 = 3;
-        let mdbval = MdbValue::new_from_sized(&a);
-        let res = i64::from_mdb_value(&mdbval);
-        println!("{:?}", res);
-    }
 }

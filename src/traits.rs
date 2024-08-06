@@ -15,7 +15,7 @@
 
 use std::{self, mem, slice};
 
-use core::MdbValue;
+use crate::MdbValue;
 use ffi::MDB_val;
 
 /// `ToMdbValue` is supposed to convert a value to a memory
@@ -142,31 +142,3 @@ impl<'b> FromMdbValue for &'b [u8] {
     }
 }
 
-macro_rules! mdb_for_primitive {
-    ($t:ty) => (
-        impl ToMdbValue for $t {
-            fn to_mdb_value(&self) -> MdbValue {
-                unsafe {
-                    MdbValue::new_from_sized(self)
-                }
-            }
-        }
-
-        impl FromMdbValue for $t {
-            fn from_mdb_value(value: &MdbValue) -> $t {
-                unsafe {
-                    let t: *mut $t = mem::transmute(value.get_ref());
-                    *t
-                }
-            }
-        }
-
-        )
-}
-
-mdb_for_primitive!(u8);
-mdb_for_primitive!(i32);
-mdb_for_primitive!(u32);
-mdb_for_primitive!(u64);
-mdb_for_primitive!(i64);
-mdb_for_primitive!(f64);
