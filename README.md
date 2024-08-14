@@ -3,7 +3,7 @@ lmdb-rs
 
 [![build](https://github.com/kn0sys/lmdb-rs/actions/workflows/rust.yml/badge.svg)](https://github.com/kn0sys/lmdb-rs/actions/workflows/rust.yml)
 
-Rust bindings for [LMDB](http://symas.com/mdb/)
+Rust bindings for [LMDB](http://symas.com)
 
 Building
 ========
