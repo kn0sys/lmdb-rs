@@ -1,5 +1,5 @@
 [package]
-name = "liblmdb-sys"
+name = "kn0sys-liblmdb-sys"
 version = "0.2.2"
 authors = ["Nigel Christian <nigel.christian@hiahatf.org>"]
 links = "lmdb"
