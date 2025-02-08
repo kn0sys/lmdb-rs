@@ -51,7 +51,7 @@ impl ToMdbValue for String {
     }
 }
 
-impl<'a> ToMdbValue for &'a str {
+impl ToMdbValue for &str {
     fn to_mdb_value(&self) -> MdbValue<'_> {
         unsafe {
             MdbValue::new(mem::transmute::<*const u8, *const libc::c_void>(self.as_ptr()), self.len())
@@ -59,7 +59,7 @@ impl<'a> ToMdbValue for &'a str {
     }
 }
 
-impl<'a> ToMdbValue for &'a [u8] {
+impl ToMdbValue for &[u8] {
     fn to_mdb_value(&self) -> MdbValue<'_> {
         unsafe {
             MdbValue::new(std::mem::transmute::<*const u8, *const libc::c_void>(self.as_ptr()),
@@ -68,7 +68,7 @@ impl<'a> ToMdbValue for &'a [u8] {
     }
 }
 
-impl<'a> ToMdbValue for &'a u64 {
+impl ToMdbValue for &u64 {
     fn to_mdb_value(&self) -> MdbValue<'_> {
         unsafe {
             let l = self.to_be_bytes();
@@ -77,7 +77,7 @@ impl<'a> ToMdbValue for &'a u64 {
     }
 }
 
-impl<'a> ToMdbValue for &'a i64 {
+impl ToMdbValue for &i64 {
     fn to_mdb_value(&self) -> MdbValue<'_> {
         unsafe {
             let l = self.to_be_bytes();
@@ -95,7 +95,7 @@ impl ToMdbValue for MDB_val {
     }
 }
 
-impl<'a> ToMdbValue for MdbValue<'a> {
+impl ToMdbValue for MdbValue<'_> {
     fn to_mdb_value(&self) -> MdbValue<'_> {
         *self
     }

@@ -1171,7 +1171,7 @@ impl<'a> NativeTransaction<'a> {
     */
 }
 
-impl<'a> Drop for NativeTransaction<'a> {
+impl Drop for NativeTransaction<'_> {
     fn drop(&mut self) {
         //debug!("Dropping native transaction!");
         self.silent_abort();
@@ -1547,7 +1547,7 @@ impl<'txn> Cursor<'txn> {
     }
 }
 
-impl<'txn> Drop for Cursor<'txn> {
+impl Drop for Cursor<'_> {
     fn drop(&mut self) {
         unsafe { ffi::mdb_cursor_close(self.handle) };
     }
@@ -1698,7 +1698,7 @@ impl<'a> CursorKeyRangeIter<'a> {
     }
 }
 
-impl<'iter> IterateCursor for CursorKeyRangeIter<'iter> {
+impl IterateCursor for CursorKeyRangeIter<'_> {
     fn init_cursor<'a, 'b: 'a>(&'a self, cursor: & mut Cursor<'b>) -> bool {
         let ok = unsafe {
             cursor.to_gte_key(mem::transmute::<&'a MdbValue<'a>, &'b MdbValue<'b>>(&self.start_key)).is_ok()
@@ -1732,7 +1732,7 @@ impl<'a> CursorFromKeyIter<'a> {
     }
 }
 
-impl<'iter> IterateCursor for CursorFromKeyIter<'iter> {
+impl IterateCursor for CursorFromKeyIter<'_> {
     fn init_cursor<'a, 'b: 'a>(&'a self, cursor: & mut Cursor<'b>) -> bool {
         unsafe {
             cursor.to_gte_key(mem::transmute::<&'a MdbValue<'a>, &'b MdbValue<'b>>(&self.start_key)).is_ok()
@@ -1761,7 +1761,7 @@ impl<'a> CursorToKeyIter<'a> {
     }
 }
 
-impl<'iter> IterateCursor for CursorToKeyIter<'iter> {
+impl IterateCursor for CursorToKeyIter<'_> {
     fn init_cursor<'a, 'b: 'a>(&'a self, cursor: & mut Cursor<'b>) -> bool {
         let ok = cursor.to_first().is_ok();
         ok && cursor.cmp_key(&self.end_key).is_less(false)
@@ -1809,7 +1809,7 @@ impl<'a> CursorItemIter<'a> {
     }
 }
 
-impl<'iter> IterateCursor for CursorItemIter<'iter> {
+impl IterateCursor for CursorItemIter<'_> {
     fn init_cursor<'a, 'b: 'a>(&'a self, cursor: & mut Cursor<'b>) -> bool {
         unsafe {
             cursor.to_key(mem::transmute::<&MdbValue, &'b MdbValue<'b>>(&self.key)).is_ok()
