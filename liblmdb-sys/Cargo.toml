@@ -1,11 +1,15 @@
 [package]
 name = "kn0sys-liblmdb-sys"
-version = "0.2.2"
+version = "0.2.3"
+edition = "2021"
 authors = ["Nigel Christian <nigel.christian@hiahatf.org>"]
 links = "lmdb"
 license = "MIT"
 description = "LMDB native lib"
 repository = "https://github.com/kn0sys/lmdb-rs"
+readme = "README.md"
+keywords = ["lmdb", "db", "key-value", "kvs", "kv"]
+categories = ["database"]
 build = "build.rs"
 
 [dependencies]

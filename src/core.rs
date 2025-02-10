@@ -1,4 +1,5 @@
 #![allow(clippy::new_ret_no_self)]
+#![allow(elided_named_lifetimes)]
 //! High level wrapper of LMDB APIs
 //!
 //! Requires knowledge of LMDB terminology
@@ -456,7 +457,7 @@ impl<'a> Database<'a> {
     }
 
     /// Returns an iterator through keys starting with start_key (>=), start_key is included
-    pub fn keyrange_from<'c, K: ToMdbValue + 'c>(&'c self, start_key: &'c K) -> MdbResult<CursorIterator<'c, CursorFromKeyIter>> {
+    pub fn keyrange_from<'c, K: ToMdbValue>(&'c self, start_key: &'c K) -> MdbResult<CursorIterator<'c, CursorFromKeyIter>> {
         let cursor = self.txn.new_cursor(self.handle)?;
         let key_range = CursorFromKeyIter::new(start_key);
         let wrap = CursorIterator::wrap(cursor, key_range);
