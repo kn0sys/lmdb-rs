@@ -21,7 +21,6 @@ use ffi::MDB_val;
 /// `ToMdbValue` is supposed to convert a value to a memory
 /// slice which `lmdb` uses to prevent multiple copying data
 /// multiple times. May be unsafe.
-
 pub trait ToMdbValue {
     fn to_mdb_value(&self) -> MdbValue<'_>;
 }
@@ -29,7 +28,6 @@ pub trait ToMdbValue {
 /// `FromMdbValue` is supposed to reconstruct a value from
 /// memory slice. It allows to use zero copy where it is
 /// required.
-
 pub trait FromMdbValue {
     fn from_mdb_value(value: &MdbValue) -> Self;
 }
