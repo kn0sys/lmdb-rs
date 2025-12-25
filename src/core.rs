@@ -1,5 +1,5 @@
 #![allow(clippy::new_ret_no_self)]
-#![allow(elided_named_lifetimes)]
+#![allow(mismatched_lifetime_syntaxes)]
 //! High level wrapper of LMDB APIs
 //!
 //! Requires knowledge of LMDB terminology
